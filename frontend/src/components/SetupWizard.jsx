@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { ALL_CHORES, REWARDS } from '../data';
+import { ALL_CHORES, REWARDS, POWER_UPS, DEFAULT_POWER_UP_SETTINGS, TRIGGER_TYPES, DURATION_OPTIONS, CLASSES } from '../data';
+import { dateKeyToInputValue, inputValueToDateKey } from '../logic';
 import TileSprite from './TileSprite';
 
 const ICON_CHOICES = [
@@ -8,15 +9,6 @@ const ICON_CHOICES = [
   '🪟','🚗','📦','💡','🔑','🪴','🧲','🏠',
   '⭐','🎯','📚','🎮','🎂','🍦','🎬','🎲',
   '🛋️','💎','🌟','🎁','🍕','🏆','🎵','🎀',
-];
-
-const CLASSES = [
-  { id: 'warrior', label: 'Warrior', tile: 87 },
-  { id: 'mage',    label: 'Mage',    tile: 84 },
-  { id: 'witch',   label: 'Witch',   tile: 99 },
-  { id: 'rogue',   label: 'Rogue',   tile: 96 },
-  { id: 'paladin', label: 'Paladin', tile: 88 },
-  { id: 'ranger',  label: 'Ranger',  tile: 82 },
 ];
 
 const PLAYER_COLORS = [
@@ -31,11 +23,25 @@ const PLAYER_COLORS = [
 const WHO_CYCLE = ['all', 'adults', 'kids'];
 const WHO_LABEL = { all: 'everyone', adults: 'adults', kids: 'kids' };
 
+const DAYS_CYCLE = ['both', 'weekday', 'weekend'];
+const DAYS_COLOR = { both: '#5a5a8a', weekday: '#7ab8f5', weekend: '#f5c870' };
+const DAYS_LABEL = { both: '7d', weekday: 'WD', weekend: 'WE' };
+const DAYS_TITLE = { both: 'Every day — tap to limit to weekdays', weekday: 'Weekdays only — tap to limit to weekends', weekend: 'Weekends only — tap to show every day' };
+
 const REWARD_TIERS = [
   { label: 'QUICK', max: 15  },
   { label: 'MID',   max: 30  },
   { label: 'BIG',   max: 65  },
   { label: 'DREAM', max: 999 },
+];
+
+const TABS = ['party', 'quests', 'rewards', 'powerups', 'display'];
+const TAB_LABELS = { party: 'Party', quests: 'Quests', rewards: 'Rewards', powerups: 'Power-Ups', display: 'Display' };
+
+const UI_SCALES = [
+  { id: 'mini',   label: 'Mini',   desc: '100%' },
+  { id: 'heroic', label: 'Heroic', desc: '125%' },
+  { id: 'epic',   label: 'Epic',   desc: '175%' },
 ];
 
 function makeNewPlayer(existingPlayers = []) {
@@ -110,7 +116,7 @@ function StepWelcome({ onNext }) {
       <div style={{ fontSize: 48, marginBottom: 8 }}>⚔</div>
       <div style={{ color: '#f5c870', fontSize: 22, fontWeight: 'bold', marginBottom: 8 }}>QUESTBOARD</div>
       <p style={{ ...S.p, maxWidth: 360, margin: '0 auto 24px' }}>
-        Turn household chores into a pixel art RPG adventure. Each family member gets a hero and fights a monster every day — complete chores to deal damage and earn gold.
+        Turn household chores into a pixel art RPG adventure. Each family member gets a hero and fights a monster every day  -  complete chores to deal damage and earn gold.
       </p>
       <button style={S.btnPrimary} onClick={onNext}>Start Setup →</button>
     </div>
@@ -141,17 +147,10 @@ function StepPlayerCount({ current, onSelect }) {
   );
 }
 
-// ── Step 2: Per-player setup ──────────────────────────────────────────────────
-function StepPlayerSetup({ player, playerIdx, total, onChange, onNext, onBack, onDone }) {
-  const canAdvance = player.name.trim().length > 0;
-
+// ── Shared: player form (wizard + Party tab) ──────────────────────────────────
+function PlayerForm({ player, onChange }) {
   return (
     <div>
-      <div style={S.h2}>
-        Hero {playerIdx + 1} of {total}
-        {player.name && <span style={{ color: '#f5c870' }}> — {player.name}</span>}
-      </div>
-
       <div style={{ marginBottom: 16 }}>
         <label style={S.label}>NAME</label>
         <input
@@ -218,9 +217,22 @@ function StepPlayerSetup({ player, playerIdx, total, onChange, onNext, onBack, o
           ))}
         </div>
       </div>
+    </div>
+  );
+}
 
+// ── Step 2: Per-player setup (wizard) ─────────────────────────────────────────
+function StepPlayerSetup({ player, playerIdx, total, onChange, onNext, onBack, onDone }) {
+  const canAdvance = player.name.trim().length > 0;
+  return (
+    <div>
+      <div style={S.h2}>
+        Hero {playerIdx + 1} of {total}
+        {player.name && <span style={{ color: '#f5c870' }}>  -  {player.name}</span>}
+      </div>
+      <PlayerForm player={player} onChange={onChange} />
       {!canAdvance && (
-        <div style={{ color: '#c05a5a', fontSize: 11, marginTop: 12 }}>Enter a name to continue.</div>
+        <div style={{ color: '#c05a5a', fontSize: 11, marginTop: 4 }}>Enter a name to continue.</div>
       )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
         <button style={S.btn} onClick={onBack}>← Back</button>
@@ -240,7 +252,7 @@ function StepPlayerSetup({ player, playerIdx, total, onChange, onNext, onBack, o
   );
 }
 
-// ── Shared: chore/reward row toggle button ────────────────────────────────────
+// ── Shared: who-toggle button ─────────────────────────────────────────────────
 function CycleBtn({ value, onClick }) {
   return (
     <button
@@ -294,10 +306,10 @@ function CustomForm({ form, setForm, onSubmit, onCancel, extraFields }) {
   );
 }
 
-// ── Step 3: Chore selection ───────────────────────────────────────────────────
-function StepChoreSelect({ players, enabledChores, onToggle, choreOverrides, onOverride, customChores, onAddCustom, onRemoveCustom, onBack, onNext }) {
+// ── Shared: chore list (wizard step + Quests tab) ─────────────────────────────
+function ChoreSection({ players, enabledChores, onToggle, choreOverrides, onOverride, customChores, onAddCustom, onRemoveCustom }) {
   const [addingCustom, setAddingCustom] = useState(false);
-  const [form, setForm] = useState({ name: '', icon: '⭐', pts: 2, who: 'all', freq: 'daily' });
+  const [form, setForm] = useState({ name: '', icon: '⭐', pts: 2, who: 'all', freq: 'daily', mode: 'party' });
 
   const modes = new Set(players.map(p => p.mode));
   const daily   = ALL_CHORES.filter(c => c.freq === 'daily');
@@ -311,19 +323,21 @@ function StepChoreSelect({ players, enabledChores, onToggle, choreOverrides, onO
   function submitCustom() {
     if (!form.name.trim()) return;
     onAddCustom({ ...form, id: `custom_${Date.now()}`, name: form.name.trim() });
-    setForm({ name: '', icon: '⭐', pts: 2, who: 'all', freq: 'daily' });
+    setForm({ name: '', icon: '⭐', pts: 2, who: 'all', freq: 'daily', mode: 'party' });
     setAddingCustom(false);
   }
 
   function ChoreRow({ chore, isCustom }) {
     const ov = choreOverrides[chore.id] || {};
-    const who = ov.who ?? chore.who;
-    const pts = ov.pts ?? chore.pts;
-    const dim = !isRelevant(who);
+    const who  = ov.who  ?? chore.who;
+    const pts  = ov.pts  ?? chore.pts;
+    const mode = ov.mode ?? chore.mode ?? 'party';
+    const days = ov.days ?? chore.days ?? 'both';
+    const dim  = !isRelevant(who);
 
     return (
       <div
-        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: '1px solid #1e1e3a', opacity: dim ? 0.4 : 1, cursor: 'pointer' }}
+        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid #1e1e3a', opacity: dim ? 0.4 : 1, cursor: 'pointer' }}
         onClick={() => !isCustom && onToggle(chore.id)}
       >
         {!isCustom && (
@@ -332,11 +346,23 @@ function StepChoreSelect({ players, enabledChores, onToggle, choreOverrides, onO
         )}
         <span style={{ fontSize: 16 }}>{chore.icon}</span>
         <span style={{ color: '#c8d0e0', fontSize: 12, flex: 1 }}>{chore.name}</span>
+        <button
+          onClick={e => { e.stopPropagation(); onOverride(chore.id, { ...ov, mode: mode === 'party' ? 'solo' : 'party' }); }}
+          style={{ background: 'none', border: '1px solid #3a3a5e', color: mode === 'solo' ? '#8dc447' : '#f5a0c0', fontSize: 10, padding: '2px 6px', cursor: 'pointer', minWidth: 34 }}
+          title={mode === 'solo' ? 'Every player does their own  -  tap to make one-person' : 'One person does it for the party  -  tap to make everyone'}
+        >{mode === 'solo' ? 'ALL' : '1P'}</button>
         <CycleBtn value={who} onClick={e => { e.stopPropagation(); const next = WHO_CYCLE[(WHO_CYCLE.indexOf(who) + 1) % WHO_CYCLE.length]; onOverride(chore.id, { ...ov, who: next }); }} />
         <button
           onClick={e => { e.stopPropagation(); onOverride(chore.id, { ...ov, pts: pts >= 6 ? 1 : pts + 1 }); }}
-          style={{ background: 'none', border: '1px solid #3a3a5e', color: '#f5c870', fontSize: 10, padding: '2px 6px', cursor: 'pointer', minWidth: 36 }}
+          style={{ background: 'none', border: '1px solid #3a3a5e', color: '#f5c870', fontSize: 10, padding: '2px 6px', cursor: 'pointer', minWidth: 34 }}
         >{pts}pts</button>
+        {chore.freq === 'daily' && (
+          <button
+            onClick={e => { e.stopPropagation(); const next = DAYS_CYCLE[(DAYS_CYCLE.indexOf(days) + 1) % DAYS_CYCLE.length]; onOverride(chore.id, { ...ov, days: next }); }}
+            style={{ background: 'none', border: '1px solid #3a3a5e', color: DAYS_COLOR[days], fontSize: 9, padding: '2px 5px', cursor: 'pointer', minWidth: 28 }}
+            title={DAYS_TITLE[days]}
+          >{DAYS_LABEL[days]}</button>
+        )}
         {isCustom && (
           <button onClick={e => { e.stopPropagation(); onRemoveCustom(chore.id); }}
             style={{ background: 'none', border: 'none', color: '#7a3a3a', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>✕</button>
@@ -364,8 +390,6 @@ function StepChoreSelect({ players, enabledChores, onToggle, choreOverrides, onO
 
   return (
     <div>
-      <div style={S.h2}>Choose your quests</div>
-      <p style={S.p}>Select chores for your family. Click the blue badge to change who it applies to; click the gold badge to change points.</p>
       <Section title="DAILY" chores={daily} />
       <Section title="WEEKLY" chores={weekly} />
       <Section title="MONTHLY" chores={monthly} />
@@ -389,12 +413,39 @@ function StepChoreSelect({ players, enabledChores, onToggle, choreOverrides, onO
                 <option value="weekly">Weekly</option>
                 <option value="monthly">Monthly</option>
               </select>
+              {form.freq === 'daily' && (
+                <select style={{ ...S.input, flex: 1 }} value={form.days ?? 'both'} onChange={e => setForm(f => ({ ...f, days: e.target.value }))}>
+                  <option value="both">All days</option>
+                  <option value="weekday">Weekdays</option>
+                  <option value="weekend">Weekend</option>
+                </select>
+              )}
+              <select style={{ ...S.input, flex: 1 }} value={form.mode} onChange={e => setForm(f => ({ ...f, mode: e.target.value }))}>
+                <option value="solo">ALL (everyone)</option>
+                <option value="party">1P (one person)</option>
+              </select>
             </>
           }
         />
       ) : (
         <button style={{ ...S.btn, width: '100%', marginBottom: 16 }} onClick={() => setAddingCustom(true)}>+ Add custom chore</button>
       )}
+    </div>
+  );
+}
+
+// ── Step 3: Chore selection (wizard) ─────────────────────────────────────────
+function StepChoreSelect({ players, enabledChores, onToggle, choreOverrides, onOverride, customChores, onAddCustom, onRemoveCustom, onBack, onNext }) {
+  return (
+    <div>
+      <div style={S.h2}>Choose your quests</div>
+      <p style={S.p}>Select chores. Green <b style={{ color: '#8dc447' }}>ALL</b> = every player does their own; pink <b style={{ color: '#f5a0c0' }}>1P</b> = one person does it for the party.</p>
+      <ChoreSection
+        players={players}
+        enabledChores={enabledChores} onToggle={onToggle}
+        choreOverrides={choreOverrides} onOverride={onOverride}
+        customChores={customChores} onAddCustom={onAddCustom} onRemoveCustom={onRemoveCustom}
+      />
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
         <button style={S.btn} onClick={onBack}>← Back</button>
         <button style={S.btnPrimary} onClick={onNext}>Next: Rewards →</button>
@@ -403,8 +454,8 @@ function StepChoreSelect({ players, enabledChores, onToggle, choreOverrides, onO
   );
 }
 
-// ── Step 4: Reward selection ──────────────────────────────────────────────────
-function StepRewardSelect({ players, enabledRewards, onToggle, rewardOverrides, onOverride, customRewards, onAddCustom, onRemoveCustom, onBack, onLaunch, isEdit }) {
+// ── Shared: reward list (wizard step + Rewards tab) ───────────────────────────
+function RewardSection({ players, enabledRewards, onToggle, rewardOverrides, onOverride, customRewards, onAddCustom, onRemoveCustom }) {
   const [addingCustom, setAddingCustom] = useState(false);
   const [form, setForm] = useState({ name: '', icon: '🏆', cost: 20, who: 'all', desc: '' });
 
@@ -422,10 +473,10 @@ function StepRewardSelect({ players, enabledRewards, onToggle, rewardOverrides, 
   }
 
   function RewardRow({ reward, isCustom }) {
-    const ov = rewardOverrides[reward.id] || {};
-    const who = ov.who ?? reward.who;
+    const ov   = rewardOverrides[reward.id] || {};
+    const who  = ov.who  ?? reward.who;
     const cost = ov.cost ?? reward.cost;
-    const dim = !isRelevant(who);
+    const dim  = !isRelevant(who);
 
     return (
       <div
@@ -475,8 +526,6 @@ function StepRewardSelect({ players, enabledRewards, onToggle, rewardOverrides, 
 
   return (
     <div>
-      <div style={S.h2}>Choose your rewards</div>
-      <p style={S.p}>Toggle rewards and set gold costs that feel right for your family. Click the blue badge to change who can redeem it.</p>
       {REWARD_TIERS.map((t, i) => (
         <TierSection key={t.label} label={t.label} max={t.max} prev={REWARD_TIERS[i - 1]?.max} />
       ))}
@@ -501,11 +550,407 @@ function StepRewardSelect({ players, enabledRewards, onToggle, rewardOverrides, 
       ) : (
         <button style={{ ...S.btn, width: '100%', marginBottom: 16 }} onClick={() => setAddingCustom(true)}>+ Add custom reward</button>
       )}
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
+    </div>
+  );
+}
+
+// ── Step 4: Reward selection (wizard) ─────────────────────────────────────────
+function StepRewardSelect({ players, enabledRewards, onToggle, rewardOverrides, onOverride, customRewards, onAddCustom, onRemoveCustom, onBack, onLaunch, crtEnabled, onToggleCrt, uiScale, onChangeUiScale, animatedBg, onToggleAnimatedBg, weekStartDay, onChangeWeekStartDay, confirmChores, onToggleConfirmChores, displayOrientation, onChangeDisplayOrientation }) {
+  return (
+    <div>
+      <div style={S.h2}>Choose your rewards</div>
+      <p style={S.p}>Toggle rewards and set gold costs. Click the blue badge to change who can redeem it.</p>
+      <RewardSection
+        players={players}
+        enabledRewards={enabledRewards} onToggle={onToggle}
+        rewardOverrides={rewardOverrides} onOverride={onOverride}
+        customRewards={customRewards} onAddCustom={onAddCustom} onRemoveCustom={onRemoveCustom}
+      />
+      <div style={{ marginTop: 20, borderTop: '1px solid #2a2a4a', paddingTop: 16 }}>
+        <div style={{ ...S.label, marginBottom: 10 }}>DISPLAY</div>
+        <div style={{ ...S.label, marginBottom: 6, fontSize: 10, color: '#8a8aaa' }}>WEEK STARTS ON</div>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          {[{ id: 1, label: 'Monday' }, { id: 0, label: 'Sunday' }].map(opt => (
+            <button
+              key={opt.id}
+              style={{ ...(weekStartDay === opt.id ? S.btnPrimary : S.btn), flex: 1, padding: '6px 4px', fontSize: 11 }}
+              onClick={() => onChangeWeekStartDay(opt.id)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          <button
+            style={{ ...(crtEnabled ? S.btnPrimary : S.btn), padding: '6px 14px', fontSize: 11 }}
+            onClick={onToggleCrt}
+          >
+            {crtEnabled ? 'CRT Scanlines ON' : 'CRT Scanlines OFF'}
+          </button>
+          <span style={{ color: '#5a5a7a', fontSize: 10 }}>Retro CRT overlay effect</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          <button
+            style={{ ...(animatedBg ? S.btnPrimary : S.btn), padding: '6px 14px', fontSize: 11 }}
+            onClick={onToggleAnimatedBg}
+          >
+            {animatedBg ? '✓ Animated BG ON' : 'Animated BG OFF'}
+          </button>
+          <span style={{ color: '#5a5a7a', fontSize: 10 }}>Disable if background flickers</span>
+        </div>
+      </div>
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ ...S.label, marginBottom: 10 }}>CHORE CONFIRMATION</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button
+            style={{ ...(confirmChores ? S.btnPrimary : S.btn), padding: '6px 14px', fontSize: 11 }}
+            onClick={onToggleConfirmChores}
+          >
+            {confirmChores ? 'Confirm chores ON' : 'Confirm chores OFF'}
+          </button>
+          <span style={{ color: '#5a5a7a', fontSize: 10 }}>Require confirmation before completing chores</span>
+        </div>
+      </div>
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ ...S.label, marginBottom: 8 }}>UI SCALE</div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {UI_SCALES.map(s => (
+            <button
+              key={s.id}
+              style={{ ...(uiScale === s.id ? S.btnPrimary : S.btn), flex: 1, padding: '8px 4px', fontSize: 11 }}
+              onClick={() => onChangeUiScale(s.id)}
+            >
+              <div style={{ fontWeight: 'bold' }}>{s.label}</div>
+              <div style={{ fontSize: 9, opacity: 0.7 }}>{s.desc}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ ...S.label, marginBottom: 6 }}>DISPLAY ORIENTATION</div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {[{ id: 'landscape', label: 'Landscape', desc: '⬛ Wide' }, { id: 'portrait', label: 'Portrait', desc: '▬ Tall' }].map(o => (
+            <button
+              key={o.id}
+              style={{ ...((displayOrientation ?? 'landscape') === o.id ? S.btnPrimary : S.btn), flex: 1, padding: '8px 4px', fontSize: 11 }}
+              onClick={() => onChangeDisplayOrientation(o.id)}
+            >
+              <div style={{ fontWeight: 'bold' }}>{o.label}</div>
+              <div style={{ fontSize: 9, opacity: 0.7 }}>{o.desc}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16 }}>
         <button style={S.btn} onClick={onBack}>← Back</button>
-        <button style={S.btnPrimary} onClick={onLaunch}>
-          {isEdit ? 'Save Changes ✓' : 'Launch the Adventure! ⚔'}
-        </button>
+        <button style={S.btnPrimary} onClick={onLaunch}>Launch the Adventure! ⚔</button>
+      </div>
+    </div>
+  );
+}
+
+// ── Edit tab: Party ───────────────────────────────────────────────────────────
+function TabParty({ players, onUpdatePlayer, onAddPlayer, onRemovePlayer }) {
+  const [expandedIdx, setExpandedIdx] = useState(null);
+
+  return (
+    <div>
+      <p style={S.p}>Edit player name and class inline. Tap the avatar to expand color and difficulty options.</p>
+      {players.map((p, i) => {
+        const cls = CLASSES.find(c => c.id === p.class) || CLASSES[0];
+        const isExpanded = expandedIdx === i;
+        return (
+          <div key={p.id} style={{ padding: '10px 0', borderBottom: '1px solid #1e1e3a' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div
+                style={{ width: 36, height: 36, background: p.color, border: `1px solid ${p.textColor}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+                onClick={() => setExpandedIdx(isExpanded ? null : i)}
+                title="Expand options"
+              >
+                <TileSprite tile={cls.tile} scale={2} />
+              </div>
+              <input
+                style={{ ...S.input, flex: 1, padding: '6px 8px', fontSize: 13 }}
+                value={p.name}
+                placeholder="Hero name…"
+                onChange={e => onUpdatePlayer(i, 'name', e.target.value)}
+              />
+              <select
+                style={{ ...S.input, width: 'auto', padding: '6px 8px', fontSize: 11, minWidth: 100 }}
+                value={p.class}
+                onChange={e => onUpdatePlayer(i, 'class', e.target.value)}
+              >
+                {CLASSES.map(c => (
+                  <option key={c.id} value={c.id}>{c.label}</option>
+                ))}
+              </select>
+              <button
+                style={{ background: 'none', border: 'none', color: '#5a5a8a', fontSize: 14, cursor: 'pointer', padding: '0 4px' }}
+                onClick={() => setExpandedIdx(isExpanded ? null : i)}
+                title={isExpanded ? 'Collapse' : 'Expand'}
+              >{isExpanded ? '▾' : '›'}</button>
+            </div>
+            {!p.name.trim() && (
+              <div style={{ color: '#c05a5a', fontSize: 10, marginTop: 4, paddingLeft: 46 }}>Name is required.</div>
+            )}
+            {isExpanded && (
+              <div style={{ paddingLeft: 46, marginTop: 12 }}>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={S.label}>DIFFICULTY</label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {[
+                      { val: 'adults', label: 'Hard', desc: 'Adults' },
+                      { val: 'kids',   label: 'Easy', desc: 'Kids'   },
+                    ].map(opt => (
+                      <button
+                        key={opt.val}
+                        style={{ ...(p.mode === opt.val ? S.btnPrimary : S.btn), flex: 1, padding: '8px 6px' }}
+                        onClick={() => onUpdatePlayer(i, 'mode', opt.val)}
+                      >
+                        <div style={{ fontSize: 12, fontWeight: 'bold' }}>{opt.label}</div>
+                        <div style={{ fontSize: 9, opacity: 0.7 }}>{opt.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label style={S.label}>COLOR</label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {PLAYER_COLORS.map((c, ci) => (
+                      <button
+                        key={ci}
+                        style={{
+                          width: 32, height: 32, background: c.color,
+                          border: p.color === c.color ? `2px solid ${c.textColor}` : '2px solid #3a3a6e',
+                          cursor: 'pointer',
+                        }}
+                        onClick={() => { onUpdatePlayer(i, 'color', c.color); onUpdatePlayer(i, 'textColor', c.textColor); }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {players.length < 6 && (
+        <button
+          style={{ ...S.btn, width: '100%', marginTop: 16 }}
+          onClick={onAddPlayer}
+        >+ Add Hero</button>
+      )}
+      {players.length > 1 && (
+        <button
+          style={{ ...S.btnDanger, width: '100%', marginTop: 8, padding: '6px 20px', fontSize: 11 }}
+          onClick={() => onRemovePlayer(players.length - 1)}
+        >Remove {players[players.length - 1].name || 'Last Hero'}</button>
+      )}
+    </div>
+  );
+}
+
+// ── Edit tab: Power-Ups ───────────────────────────────────────────────────────
+
+function TabPowerUps({ powerUpSettings, onChange }) {
+  return (
+    <div>
+      <p style={S.p}>Power tokens are earned by dealing overkill damage after the daily monster is defeated. Configure which power-ups are available and how they trigger.</p>
+      {POWER_UPS.map(pu => {
+        const cfg = powerUpSettings[pu.id] || { enabled: true, trigger: 'daily_chores', count: 5, durationHours: 24 };
+        return (
+          <div key={pu.id} style={{ padding: '12px 0', borderBottom: '1px solid #1e1e3a' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <TileSprite tile={pu.icon} scale={2} />
+              <div style={{ flex: 1 }}>
+                <div style={{ color: '#c8d0e0', fontSize: 13, fontWeight: 'bold' }}>{pu.name}</div>
+                <div style={{ color: '#5a5a8a', fontSize: 10 }}>{pu.desc}</div>
+              </div>
+              <button
+                style={{ ...(cfg.enabled ? S.btnPrimary : S.btn), padding: '4px 12px', fontSize: 11 }}
+                onClick={() => onChange(pu.id, { ...cfg, enabled: !cfg.enabled })}
+              >
+                {cfg.enabled ? 'ON' : 'OFF'}
+              </button>
+            </div>
+            {cfg.enabled && (
+              <div style={{ marginTop: 10, paddingLeft: 44, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div>
+                  <span style={{ ...S.label, display: 'inline', marginRight: 8 }}>AUTO-TRIGGER</span>
+                  <select
+                    style={{ ...S.input, display: 'inline', width: 'auto', padding: '2px 8px', fontSize: 11 }}
+                    value={cfg.trigger}
+                    onChange={e => onChange(pu.id, { ...cfg, trigger: e.target.value })}
+                  >
+                    {TRIGGER_TYPES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+                  </select>
+                  <input
+                    type="number" min={1} max={99} value={cfg.count}
+                    onChange={e => { const v = parseInt(e.target.value, 10); if (!isNaN(v) && v > 0) onChange(pu.id, { ...cfg, count: v }); }}
+                    style={{ ...S.input, display: 'inline', width: 44, padding: '2px 6px', fontSize: 11, marginLeft: 6, textAlign: 'center' }}
+                  />
+                  <span style={{ color: '#5a5a8a', fontSize: 10, marginLeft: 4 }}>times</span>
+                </div>
+                {pu.effectType === 'timed' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ ...S.label, display: 'inline', marginBottom: 0, marginRight: 6 }}>DURATION</span>
+                    {DURATION_OPTIONS.map(h => (
+                      <button
+                        key={h}
+                        style={{ ...(cfg.durationHours === h ? S.btnPrimary : S.btn), padding: '2px 10px', fontSize: 10 }}
+                        onClick={() => onChange(pu.id, { ...cfg, durationHours: h })}
+                      >{h}h</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Edit tab: Display ─────────────────────────────────────────────────────────
+function TabDisplay({ crtEnabled, onToggleCrt, uiScale, onChangeUiScale, animatedBg, onToggleAnimatedBg, weekStartDay, onChangeWeekStartDay, confirmChores, onToggleConfirmChores, displayOrientation, onChangeDisplayOrientation, vacation, onChangeVacation, adminPin, onChangeAdminPin }) {
+  const vac = vacation ?? { enabled: false, start: '', end: '' };
+  const dateInput = {
+    ...S.input,
+    flex: 1, minWidth: 0, padding: '6px 8px', fontSize: 11,
+    colorScheme: 'dark',
+    opacity: vac.enabled ? 1 : 0.5,
+  };
+  return (
+    <div>
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ ...S.label, marginBottom: 10 }}>VACATION MODE</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+          <button
+            style={{ ...(vac.enabled ? S.btnPrimary : S.btn), padding: '6px 14px', fontSize: 11 }}
+            onClick={() => onChangeVacation({ ...vac, enabled: !vac.enabled })}
+          >
+            {vac.enabled ? '✓ Vacation Mode ON' : 'Vacation Mode OFF'}
+          </button>
+          <span style={{ color: '#5a5a7a', fontSize: 10 }}>No overnight penalties while you're away from home</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+          <span style={{ color: '#8a8aae', fontSize: 11, width: 36 }}>From</span>
+          <input
+            type="date"
+            disabled={!vac.enabled}
+            style={dateInput}
+            value={dateKeyToInputValue(vac.start)}
+            max={vac.end ? dateKeyToInputValue(vac.end) : undefined}
+            onChange={e => onChangeVacation({ ...vac, start: inputValueToDateKey(e.target.value) })}
+          />
+          <span style={{ color: '#8a8aae', fontSize: 11, width: 24 }}>To</span>
+          <input
+            type="date"
+            disabled={!vac.enabled}
+            style={dateInput}
+            value={dateKeyToInputValue(vac.end)}
+            min={vac.start ? dateKeyToInputValue(vac.start) : undefined}
+            onChange={e => onChangeVacation({ ...vac, end: inputValueToDateKey(e.target.value) })}
+          />
+        </div>
+        <div style={{ color: '#5a5a7a', fontSize: 10 }}>
+          Leave the dates blank to pause penalties indefinitely until you switch it off. Kill streaks are frozen, not reset, on covered days.
+        </div>
+      </div>
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ ...S.label, marginBottom: 10 }}>WEEK STARTS ON</div>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+          {[{ id: 1, label: 'Monday' }, { id: 0, label: 'Sunday' }].map(opt => (
+            <button
+              key={opt.id}
+              style={{ ...(weekStartDay === opt.id ? S.btnPrimary : S.btn), flex: 1, padding: '8px 4px', fontSize: 11 }}
+              onClick={() => onChangeWeekStartDay(opt.id)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        <div style={{ color: '#5a5a7a', fontSize: 10, marginBottom: 16 }}>Controls when weekly chores and gold reset</div>
+      </div>
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ ...S.label, marginBottom: 10 }}>CRT EFFECT</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button
+            style={{ ...(crtEnabled ? S.btnPrimary : S.btn), padding: '6px 14px', fontSize: 11 }}
+            onClick={onToggleCrt}
+          >
+            {crtEnabled ? '✓ CRT Scanlines ON' : 'CRT Scanlines OFF'}
+          </button>
+          <span style={{ color: '#5a5a7a', fontSize: 10 }}>Retro CRT overlay effect</span>
+        </div>
+      </div>
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ ...S.label, marginBottom: 10 }}>ANIMATED BACKGROUND</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button
+            style={{ ...(animatedBg ? S.btnPrimary : S.btn), padding: '6px 14px', fontSize: 11 }}
+            onClick={onToggleAnimatedBg}
+          >
+            {animatedBg ? '✓ Animated BG ON' : 'Animated BG OFF'}
+          </button>
+          <span style={{ color: '#5a5a7a', fontSize: 10 }}>Parallax dungeon background (disable if flickering on slower devices)</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          <button
+            style={{ ...(confirmChores ? S.btnPrimary : S.btn), padding: '6px 14px', fontSize: 11 }}
+            onClick={onToggleConfirmChores}
+          >
+            {confirmChores ? 'Confirm chores ON' : 'Confirm chores OFF'}
+          </button>
+          <span style={{ color: '#5a5a7a', fontSize: 10 }}>Require confirmation before completing chores</span>
+        </div>
+      </div>
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ ...S.label, marginBottom: 6 }}>UI SCALE</div>
+        <p style={{ ...S.p, fontSize: 11 }}>Scale the entire interface for your display. Heroic and Epic are great for tablets or large screens.</p>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {UI_SCALES.map(s => (
+            <button
+              key={s.id}
+              style={{ ...(uiScale === s.id ? S.btnPrimary : S.btn), flex: 1, padding: '14px 4px', fontSize: 12 }}
+              onClick={() => onChangeUiScale(s.id)}
+            >
+              <div style={{ fontWeight: 'bold' }}>{s.label}</div>
+              <div style={{ fontSize: 10, opacity: 0.7 }}>{s.desc}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ ...S.label, marginBottom: 6 }}>DISPLAY ORIENTATION</div>
+        <p style={{ ...S.p, fontSize: 11 }}>Landscape is the default for kitchen tablets. Portrait stacks the layout vertically for fridge or tall screens.</p>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {[{ id: 'landscape', label: 'Landscape', desc: '⬛ Wide' }, { id: 'portrait', label: 'Portrait', desc: '▬ Tall' }].map(o => (
+            <button
+              key={o.id}
+              style={{ ...(displayOrientation === o.id ? S.btnPrimary : S.btn), flex: 1, padding: '14px 4px', fontSize: 12 }}
+              onClick={() => onChangeDisplayOrientation(o.id)}
+            >
+              <div style={{ fontWeight: 'bold' }}>{o.label}</div>
+              <div style={{ fontSize: 10, opacity: 0.7 }}>{o.desc}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div>
+        <div style={{ ...S.label, marginBottom: 6 }}>ADMIN PIN</div>
+        <p style={{ ...S.p, fontSize: 11 }}>Lock Settings, Reset, and Import behind a 4-digit PIN. Leave blank for no lock.</p>
+        <input
+          type="password"
+          inputMode="numeric"
+          maxLength={4}
+          value={adminPin}
+          onChange={e => onChangeAdminPin(e.target.value.replace(/\D/g, ''))}
+          placeholder="No PIN set"
+          style={{ ...S.input, width: 120, letterSpacing: 6, fontSize: 18, textAlign: 'center' }}
+        />
+        {adminPin && <div style={{ color: '#5a5a7a', fontSize: 10, marginTop: 4 }}>{adminPin.length === 4 ? 'PIN set' : `${adminPin.length}/4 digits`}</div>}
       </div>
     </div>
   );
@@ -515,7 +960,8 @@ function StepRewardSelect({ players, enabledRewards, onToggle, rewardOverrides, 
 export default function SetupWizard({ onComplete, onCancel, initialConfig }) {
   const isEdit = !!initialConfig;
 
-  const [step, setStep] = useState(isEdit ? 1 : 0);
+  const [step, setStep] = useState(isEdit ? 'tabs' : 0);
+  const [activeTab, setActiveTab] = useState('party');
   const [players, setPlayers] = useState(initialConfig?.players ?? []);
   const [playerIdx, setPlayerIdx] = useState(0);
   const [enabledChores, setEnabledChores] = useState(
@@ -528,6 +974,17 @@ export default function SetupWizard({ onComplete, onCancel, initialConfig }) {
   );
   const [rewardOverrides, setRewardOverrides] = useState(initialConfig?.rewardOverrides ?? {});
   const [customRewards, setCustomRewards] = useState(initialConfig?.customRewards ?? []);
+  const [crtEnabled, setCrtEnabled] = useState(initialConfig?.crtEnabled ?? true);
+  const [uiScale, setUiScale] = useState(initialConfig?.uiScale ?? 'mini');
+  const [animatedBg, setAnimatedBg] = useState(initialConfig?.animatedBg ?? true);
+  const [weekStartDay, setWeekStartDay] = useState(initialConfig?.weekStartDay ?? 1);
+  const [confirmChores, setConfirmChores] = useState(initialConfig?.confirmChores ?? false);
+  const [displayOrientation, setDisplayOrientation] = useState(initialConfig?.displayOrientation ?? 'landscape');
+  const [vacation, setVacation] = useState(initialConfig?.vacation ?? { enabled: false, start: '', end: '' });
+  const [adminPin, setAdminPin] = useState(initialConfig?.adminPin ?? '');
+  const [powerUpSettings, setPowerUpSettings] = useState(
+    initialConfig?.powerUpSettings ?? { ...DEFAULT_POWER_UP_SETTINGS }
+  );
   const [launching, setLaunching] = useState(false);
 
   function handlePlayerCount(n) {
@@ -546,6 +1003,10 @@ export default function SetupWizard({ onComplete, onCancel, initialConfig }) {
 
   function updatePlayer(key, val) {
     setPlayers(prev => prev.map((p, i) => i === playerIdx ? { ...p, [key]: val } : p));
+  }
+
+  function updatePlayerAt(idx, key, val) {
+    setPlayers(prev => prev.map((p, i) => i === idx ? { ...p, [key]: val } : p));
   }
 
   function nextPlayer() {
@@ -589,32 +1050,120 @@ export default function SetupWizard({ onComplete, onCancel, initialConfig }) {
       enabledRewards: [...enabledRewards],
       rewardOverrides,
       customRewards,
+      crtEnabled,
+      uiScale,
+      animatedBg,
+      weekStartDay,
+      confirmChores,
+      powerUpSettings,
+      displayOrientation,
+      vacation,
+      ...(adminPin ? { adminPin } : {}),
     });
   }
 
   const currentCount = players.length || (initialConfig?.players?.length ?? 2);
+
+  // ── Edit mode: tabbed interface ───────────────────────────────────────────
+  if (isEdit && step === 'tabs') {
+    return (
+      <div style={S.overlay}>
+        <div style={S.card}>
+          <div style={S.header}>
+            <span style={S.title}>⚔ EDIT SETTINGS</span>
+            {onCancel && (
+              <button style={{ ...S.btn, padding: '4px 10px', fontSize: 11 }} onClick={onCancel}>✕ Cancel</button>
+            )}
+          </div>
+          <div style={{ display: 'flex', borderBottom: '1px solid #2a2a4a', flexShrink: 0 }}>
+            {TABS.map(tab => (
+              <button
+                key={tab}
+                style={{
+                  flex: 1, padding: '9px 2px', fontSize: 10, letterSpacing: 0.5, cursor: 'pointer',
+                  background: activeTab === tab ? '#1e1e3e' : 'transparent',
+                  border: 'none',
+                  borderBottom: activeTab === tab ? '2px solid #f5c870' : '2px solid transparent',
+                  color: activeTab === tab ? '#f5c870' : '#5a5a8a',
+                }}
+                onClick={() => setActiveTab(tab)}
+              >
+                {TAB_LABELS[tab]}
+              </button>
+            ))}
+          </div>
+          <div style={S.body}>
+            {launching ? (
+              <div style={{ textAlign: 'center', padding: '40px 0', color: '#c8d0e0' }}>Saving changes…</div>
+            ) : activeTab === 'party' ? (
+              <TabParty
+                players={players}
+                onUpdatePlayer={updatePlayerAt}
+                onAddPlayer={() => setPlayers(prev => [...prev, makeNewPlayer(prev)])}
+                onRemovePlayer={idx => setPlayers(prev => prev.filter((_, i) => i !== idx))}
+              />
+            ) : activeTab === 'quests' ? (
+              <ChoreSection
+                players={players}
+                enabledChores={enabledChores} onToggle={toggleChore}
+                choreOverrides={choreOverrides} onOverride={overrideChore}
+                customChores={customChores}
+                onAddCustom={c => setCustomChores(prev => [...prev, c])}
+                onRemoveCustom={id => setCustomChores(prev => prev.filter(c => c.id !== id))}
+              />
+            ) : activeTab === 'rewards' ? (
+              <RewardSection
+                players={players}
+                enabledRewards={enabledRewards} onToggle={toggleReward}
+                rewardOverrides={rewardOverrides} onOverride={overrideReward}
+                customRewards={customRewards}
+                onAddCustom={r => setCustomRewards(prev => [...prev, r])}
+                onRemoveCustom={id => setCustomRewards(prev => prev.filter(r => r.id !== id))}
+              />
+            ) : activeTab === 'powerups' ? (
+              <TabPowerUps
+                powerUpSettings={powerUpSettings}
+                onChange={(id, cfg) => setPowerUpSettings(prev => ({ ...prev, [id]: cfg }))}
+              />
+            ) : (
+              <TabDisplay
+                crtEnabled={crtEnabled} onToggleCrt={() => setCrtEnabled(v => !v)}
+                uiScale={uiScale} onChangeUiScale={setUiScale}
+                animatedBg={animatedBg} onToggleAnimatedBg={() => setAnimatedBg(v => !v)}
+                weekStartDay={weekStartDay} onChangeWeekStartDay={setWeekStartDay}
+                confirmChores={confirmChores} onToggleConfirmChores={() => setConfirmChores(v => !v)}
+                displayOrientation={displayOrientation} onChangeDisplayOrientation={setDisplayOrientation}
+                vacation={vacation} onChangeVacation={setVacation}
+                adminPin={adminPin} onChangeAdminPin={setAdminPin}
+              />
+            )}
+          </div>
+          <div style={S.footer}>
+            <span style={{ color: '#5a5a8a', fontSize: 11 }}>{players.length} hero{players.length !== 1 ? 'es' : ''}</span>
+            <button style={S.btnPrimary} onClick={handleLaunch}>Save Changes ✓</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Wizard mode: step-by-step new setup ──────────────────────────────────
   const stepNum = step <= 1 ? step + 1 : step;
-  const totalSteps = isEdit ? 4 : 5;
 
   return (
     <div style={S.overlay}>
       <div style={S.card}>
         {step > 0 && (
           <div style={S.header}>
-            <span style={S.title}>⚔ {isEdit ? 'EDIT SETTINGS' : 'QUESTBOARD SETUP'}</span>
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-              <span style={S.stepIndicator}>Step {stepNum} of {totalSteps}</span>
-              {isEdit && onCancel && (
-                <button style={{ ...S.btn, padding: '4px 10px', fontSize: 11 }} onClick={onCancel}>✕ Cancel</button>
-              )}
-            </div>
+            <span style={S.title}>⚔ QUESTBOARD SETUP</span>
+            <span style={S.stepIndicator}>Step {stepNum} of 5</span>
           </div>
         )}
 
         <div style={S.body}>
           {launching ? (
             <div style={{ textAlign: 'center', padding: '40px 0', color: '#c8d0e0' }}>
-              {isEdit ? 'Saving changes…' : 'Preparing your adventure…'}
+              Preparing your adventure…
             </div>
           ) : step === 0 ? (
             <StepWelcome onNext={() => setStep(1)} />
@@ -655,14 +1204,25 @@ export default function SetupWizard({ onComplete, onCancel, initialConfig }) {
               onRemoveCustom={id => setCustomRewards(prev => prev.filter(r => r.id !== id))}
               onBack={() => setStep(3)}
               onLaunch={handleLaunch}
-              isEdit={isEdit}
+              crtEnabled={crtEnabled}
+              onToggleCrt={() => setCrtEnabled(v => !v)}
+              uiScale={uiScale}
+              onChangeUiScale={setUiScale}
+              animatedBg={animatedBg}
+              onToggleAnimatedBg={() => setAnimatedBg(v => !v)}
+              weekStartDay={weekStartDay}
+              onChangeWeekStartDay={setWeekStartDay}
+              confirmChores={confirmChores}
+              onToggleConfirmChores={() => setConfirmChores(v => !v)}
+              displayOrientation={displayOrientation}
+              onChangeDisplayOrientation={setDisplayOrientation}
             />
           )}
         </div>
 
         {step === 1 && (
           <div style={S.footer}>
-            <button style={S.btn} onClick={isEdit ? onCancel : () => setStep(0)}>← Back</button>
+            <button style={S.btn} onClick={() => setStep(0)}>← Back</button>
             <span style={{ color: '#5a5a8a', fontSize: 11 }}>tap a number above</span>
           </div>
         )}

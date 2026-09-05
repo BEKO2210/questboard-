@@ -1,10 +1,8 @@
 # Questboard
 
-> Turn household chores into a pixel art RPG adventure.
+> Turn household chores into a pixel art RPG adventure for the whole family.
 
-Each family member gets a hero and faces a daily monster. Complete chores to deal damage — defeat the monster before midnight to earn gold, or it fights back. Spend gold in the reward shop on treats you've agreed on as a family.
-
-![Questboard](https://raw.githubusercontent.com/thillygooth/questboard/main/screenshot.png)
+Each family member picks a hero and fights a daily monster. Complete chores to deal damage, defeat it before midnight to earn gold, or it strikes back. Spend gold on rewards you've agreed on as a family.
 
 [![Release](https://img.shields.io/github/v/release/thillygooth/questboard)](https://github.com/thillygooth/questboard/releases)
 [![License](https://img.shields.io/github/license/thillygooth/questboard)](LICENSE)
@@ -12,22 +10,56 @@ Each family member gets a hero and faces a daily monster. Complete chores to dea
 
 ---
 
-## Install on Home Assistant
+![Chores](screenshot_chores.png)
 
-**Step 1 — Run the container**
+![Rewards](screenshot_rewards.png)
+
+![Dungeon](screenshot_dungeon.png)
+
+---
+
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| ⚔ Monster battles | Each player fights a date-seeded monster every day |
+| 💥 Crit hits | 5% base crit chance, increases with level |
+| 🔥 Kill streaks | Multi-day streaks multiply gold rewards up to 2x |
+| 🎯 Combo attacks | Chain chores within 8 seconds for up to 2.5x bonus damage |
+| 🎲 Loot drops | Chance to find bonus gold or XP on any chore |
+| ⚡ Overkill system | Extra chores after a kill charge a bar to bank Power Tokens |
+| 🔮 Power-ups | Gold Rush, Double Damage, Shield Aura, Treasure Magnet, Forge Reward |
+| 🏅 Badges and titles | Unlock achievements and choose your hero title |
+| ⭐ Prestige | Reset XP at level 10 for a permanent gold bonus |
+| 🗺 Dungeon | Per-player fog-of-war dungeon - chores earn moves |
+| 🏆 Weekly leaderboard | See who earned the most gold this week |
+| 🌙 Overnight penalty | Fail to kill your monster and lose gold at midnight |
+| 👥 Up to 6 players | Each with their own hero, monster, gold, XP, and dungeon |
+| 👤 Solo chores | Personal tasks tracked per player (brush teeth, homework) |
+| 📱 Kids and adults modes | Separate difficulty scaling with easier monsters for kids |
+| 🎮 CRT overlay | Optional scanline filter for retro vibes |
+| 🔍 UI scale | Mini, Heroic, and Epic zoom modes for any screen size |
+| 📅 Week start day | Configurable Monday or Sunday weekly reset |
+| 💾 Backup and restore | Export and import save data |
+
+📖 **[Full game guide](questboard/DOCS.md)** - hero classes, dungeon mechanics, combat, badges, power-ups, and more.
+
+---
+
+## Install
+
+### Home Assistant
 
 In the HA Terminal add-on:
 
 ```bash
 mkdir -p /mnt/data/supervisor/questboard/data
-docker run -d --restart unless-stopped -p 8099:8099 \
+docker run -d --restart unless-stopped --name questboard -p 8099:8099 \
   -v /mnt/data/supervisor/questboard/data:/data \
   ghcr.io/thillygooth/questboard:latest
 ```
 
-**Step 2 — Add to the HA sidebar**
-
-In `configuration.yaml` (use the File Editor add-on):
+Then add it to your HA sidebar in `configuration.yaml`:
 
 ```yaml
 panel_iframe:
@@ -38,61 +70,18 @@ panel_iframe:
     require_admin: false
 ```
 
-Replace `<your-ha-ip>` with your Home Assistant IP (e.g. `192.168.1.34`). Find it under **Settings → System → Network**.
+Replace `<your-ha-ip>` with your Home Assistant IP, found under **Settings → System → Network**. Restart HA to apply.
 
-Then restart HA (**Settings → System → Restart**). Questboard appears in your sidebar.
-
----
-
-## Features
-
-- **Monster battles** — each player fights a unique monster every day
-- **Crit hits** — 5% base chance to double damage, increases as you level up
-- **XP & levels** — defeat monsters to gain XP and raise your crit chance
-- **Kill streaks** — multi-day streaks multiply gold rewards (up to 2x)
-- **Combo attacks** — chain chores quickly for bonus damage
-- **Loot drops** — chance to find bonus gold or XP after completing a chore
-- **Badges & titles** — unlock achievements and earn a hero title
-- **Prestige** — reset XP at level 10 for a permanent gold bonus
-- **Gold economy** — earn gold by winning, spend it in the family reward shop
-- **Weekly leaderboard** — see who earned the most gold this week
-- **Smart resets** — daily/weekly/monthly chores reset automatically at the right time
-- **Overnight penalty** — fail to defeat your monster and lose gold when you sleep
-- **Up to 6 players** — each with their own monster, gold, XP, and streak
-
----
-
-## Manual Install (Docker)
+### Docker (any host)
 
 ```bash
 mkdir -p /opt/questboard/data
-docker run -d --restart unless-stopped -p 8099:8099 \
+docker run -d --restart unless-stopped --name questboard -p 8099:8099 \
   -v /opt/questboard/data:/data \
   ghcr.io/thillygooth/questboard:latest
 ```
 
-Open `http://localhost:8099`.
-
-> Use any writable absolute path for the data volume. On Home Assistant OS use `/mnt/data/supervisor/questboard/data` instead of `/opt/questboard/data` since most of the filesystem is read-only.
-
----
-
-## Running on a Separate Host
-
-Questboard has no connection to Home Assistant — it's a standalone web app that stores its own data. You can run it on any machine on your network, not just the HA host.
-
-To add it to the HA sidebar from a separate Docker host, just point the `url` at that machine's IP:
-
-```yaml
-panel_iframe:
-  questboard:
-    title: "Questboard"
-    url: "http://<docker-host-ip>:8099"
-    icon: mdi:sword-cross
-    require_admin: false
-```
-
-Replace `<docker-host-ip>` with the IP of whichever machine is running the container (e.g. `192.168.1.50`). The sidebar embeds any reachable URL — it doesn't need to be on the HA host.
+Open `http://localhost:8099`. Use any writable path for the data volume.
 
 ---
 
@@ -100,20 +89,23 @@ Replace `<docker-host-ip>` with the IP of whichever machine is running the conta
 
 A setup wizard runs the first time you open the app:
 
-1. Set the number of players (1–6)
-2. For each player: name, difficulty (easy/kids or hard/adults), avatar, class
-3. Choose which chores to track — toggle any on/off, or add custom ones
-4. Start the adventure
+1. Set the number of players (1-6)
+2. For each player: name, difficulty (kids / adults), avatar class
+3. Choose which chores to track - toggle on/off, set solo vs. shared, adjust values
+4. Configure the reward shop - enable/disable rewards, set custom costs
+5. Configure power-ups and display options (CRT overlay, UI scale, week start day)
+
+After launch, tap **Settings** to edit anything without re-running the wizard.
 
 ---
 
 ## Development
 
 ```bash
-# Frontend (hot-reload dev server on :5174)
+# Frontend - hot-reload dev server on :5174
 cd frontend && npm install && npm run dev
 
-# Backend (auto-reload API server on :5050)
+# Backend - auto-reload API server on :5050
 cd backend && pip install -r requirements.txt
 uvicorn main:app --reload --port 5050
 ```
@@ -124,4 +116,14 @@ The dev server proxies `/api/*` to the backend automatically.
 
 ## License
 
-[MIT](LICENSE) — free to use, fork, and share.
+[CC BY-NC 4.0](LICENSE) - free to share and adapt for non-commercial purposes with attribution. Commercial use is prohibited.
+
+Sprite assets from [OpenGameArt.org](https://opengameart.org) under CC-BY / CC0 licenses. Font: [Pixelated Elegance](https://www.fontspace.com/pixelated-elegance-font-f126145) by GGBotNet (CC0).
+
+---
+
+## Credits
+
+Overkill system, power-ups, solo chore mode, tabbed settings, new hero classes, and gold economy rebalancing contributed by **[TreasuryMatt](https://github.com/TreasuryMatt)**.
+
+Week start day config, chore confirmation, player editing, state backup/restore, bug fixes, and docs contributed by **[CarelvanHeerden](https://github.com/CarelvanHeerden)**.

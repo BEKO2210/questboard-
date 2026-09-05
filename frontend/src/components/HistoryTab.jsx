@@ -1,21 +1,48 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import TileSprite from './TileSprite';
 
+function formatTime(ts) {
+  if (!ts) return null;
+  const now = Date.now();
+  const diff = now - ts;
+  const secs = Math.floor(diff / 1000);
+  if (secs < 60) return 'just now';
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  const d = new Date(ts);
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${months[d.getMonth()]} ${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
 const TYPE_TILE = {
-  chore:   118,
-  gold:     55,
-  penalty: 123,
-  reward:   41,
+  chore:           118,
+  gold:             55,
+  penalty:         123,
+  reward:           41,
+  badge:            29,
+  loot:             72,
+  bounty_post:      89,
+  bounty_complete:  89,
+  bounty_cancel:    89,
 };
 
 export default function HistoryTab({ history, players, weeklyGold = {} }) {
   const [filter, setFilter] = useState(null);
 
-  const all = [...history].reverse().slice(0, 200);
+  const all = useMemo(() => [...history].reverse().slice(0, 200), [history]);
   const activity = all.filter(h => h.type !== 'reward');
   const rewards = all.filter(h => h.type === 'reward');
-  const hist = filter ? activity.filter(h => h.player === filter) : activity.slice(0, 60);
-  const rewardHist = filter ? rewards.filter(h => h.player === filter) : rewards;
+  const filterName = filter ? (players ?? []).find(p => p.id === filter)?.name ?? null : null;
+  const hist = filter
+    ? activity.filter(h => h.playerId === filter || (filterName && h.player === filterName))
+    : activity.slice(0, 60);
+  const rewardHist = filter
+    ? rewards.filter(h => h.playerId === filter || (filterName && h.player === filterName))
+    : rewards;
 
   return (
     <>
@@ -30,8 +57,8 @@ export default function HistoryTab({ history, players, weeklyGold = {} }) {
         {(players ?? []).map(p => (
           <button
             key={p.id}
-            className={`history-filter-btn${filter === p.name ? ' active' : ''}`}
-            onClick={() => setFilter(prev => prev === p.name ? null : p.name)}
+            className={`history-filter-btn${filter === p.id ? ' active' : ''}`}
+            onClick={() => setFilter(prev => prev === p.id ? null : p.id)}
           >
             {p.name}
           </button>
@@ -43,14 +70,24 @@ export default function HistoryTab({ history, players, weeklyGold = {} }) {
         <div className="redeemed-list">
           {hist.map((h, i) => {
             const tile = TYPE_TILE[h.type] ?? 118;
-            const action = h.type === 'chore' ? 'completed' : h.type === 'penalty' ? 'attacked by' : 'slew';
-            const pts = h.type === 'chore' ? `(+${h.pts} dmg${h.crit ? ' CRIT' : ''})` : h.type === 'penalty' ? `(-${h.pts} gold)` : `(+${h.pts} gold${h.lucky ? ' LUCKY' : ''})`;
+            let action, pts;
+            switch (h.type) {
+              case 'chore':           action = 'completed'; pts = `(+${h.pts} dmg${h.crit ? ' CRIT' : ''})`; break;
+              case 'penalty':         action = 'attacked by'; pts = `(-${h.pts} gold)`; break;
+              case 'badge':           action = 'earned'; pts = h.icon || '🏅'; break;
+              case 'loot':            action = 'found'; pts = h.pts ? `(+${h.pts} gold)` : (h.xp ? `(+${h.xp} XP)` : ''); break;
+              case 'bounty_post':     action = 'posted bounty'; pts = `(-${h.pts}g held)`; break;
+              case 'bounty_complete': action = 'completed bounty'; pts = `(+${h.pts}g)`; break;
+              case 'bounty_cancel':   action = 'canceled bounty'; pts = `(+${h.pts}g back)`; break;
+              default:                action = 'slew'; pts = h.pts != null ? `(+${h.pts} gold${h.lucky ? ' LUCKY' : ''})` : ''; break;
+            }
             return (
               <div key={i} className="redeemed-item">
                 <TileSprite tile={tile} display={14} />
                 <span>
                   <span className="redeemed-name">{h.player}</span> {action}{' '}
                   <span className="redeemed-name">{h.name}</span> {pts}
+                  {h.ts && <span className="history-ts">{formatTime(h.ts)}</span>}
                 </span>
               </div>
             );
@@ -69,6 +106,7 @@ export default function HistoryTab({ history, players, weeklyGold = {} }) {
                   <span className="redeemed-name">{h.player}</span> redeemed{' '}
                   <span className="redeemed-name">{h.name}</span>{' '}
                   (-{h.pts} gold)
+                  {h.ts && <span className="history-ts">{formatTime(h.ts)}</span>}
                 </span>
               </div>
             ))}
